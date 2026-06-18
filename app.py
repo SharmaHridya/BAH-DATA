@@ -121,6 +121,7 @@ def get_real_hotspots(start_d, end_d):
         pt = ee.Geometry.Point([spot['lon'], spot['lat']])
         temp_data = local_lst.reduceRegion(reducer=ee.Reducer.mean(), geometry=pt, scale=30).getInfo()
         # Fallback to 25.0 if the pixel is masked out by a cloud
+        
         spot['base_temp'] = temp_data.get('ST_B10') or 25.0 
     return base_spots
 

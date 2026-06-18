@@ -164,9 +164,10 @@ Used for:
 Developed as part of ISRO BAH 2026.
 
 Contributors:
-
+* Premanshu Dey
 * Hridya Sharma
-* Team Members
+* Alisha Sharma
+* Shashank Chimote
 
 ⸻
 

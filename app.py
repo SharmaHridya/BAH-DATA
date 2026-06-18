@@ -48,6 +48,12 @@ folium.Map.add_ee_layer = add_ee_layer
 
 # --- UI: Sidebar Controls ---
 st.sidebar.title("🌿 Intervention Sandbox")
+st.sidebar.subheader("🗺️ Map Layer")
+
+map_mode = st.sidebar.radio(
+    "Select Visualization",
+    ["Land Surface Temperature", "Green Cover (NDVI)"]
+)
 
 # NEW FEATURE: Dynamic Date Selector to prove real-time data
 st.sidebar.subheader("📅 Live Satellite Data")
@@ -83,6 +89,16 @@ dataset = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2') \
 
 # Convert ST_B10 to Celsius
 lst_image = dataset.median().select('ST_B10').multiply(0.00341802).add(149.0).subtract(273.15)
+# Sentinel-2 vegetation imagery
+s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+    .filterBounds(delhi_bounds) \
+    .filterDate(start_date, end_date) \
+    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+
+# NDVI = (NIR - Red) / (NIR + Red)
+ndvi_image = s2.median() \
+    .normalizedDifference(['B8', 'B4']) \
+    .rename('NDVI')
 
 @st.cache_data
 def get_real_hotspots(start_d, end_d):
@@ -143,8 +159,34 @@ vis_params = {
     'min': 15, 'max': 50, 
     'palette': ['blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']
 }
-m.add_ee_layer(lst_image.clip(delhi_bounds), vis_params, 'Real LST Heatmap', shown=True, opacity=0.65)
+ndvi_vis = {
+    'min': 0,
+    'max': 1,
+    'palette': [
+        'white',
+        'yellow',
+        'lightgreen',
+        'green',
+        'darkgreen'
+    ]
+}
+if map_mode == "Land Surface Temperature":
+    m.add_ee_layer(
+        lst_image.clip(delhi_bounds),
+        vis_params,
+        'Land Surface Temperature',
+        shown=True,
+        opacity=0.65
+    )
 
+else:
+    m.add_ee_layer(
+        ndvi_image.clip(delhi_bounds),
+        ndvi_vis,
+        'Green Cover (NDVI)',
+        shown=True,
+        opacity=0.8
+    )
 # Add the 5 hotspots to the map
 for spot in hotspots:
     new_t = calculate_new_temp(spot["base_temp"], tree_canopy, cool_roofs, albedo)
@@ -166,6 +208,15 @@ for spot in hotspots:
 
 # Add Layer Control to let users toggle the satellite view
 folium.LayerControl().add_to(m)
+if map_mode == "Green Cover (NDVI)":
+    st.success("""
+    🌳 Green Cover Layer
+
+    Dark Green = Dense vegetation
+    Green = Moderate vegetation
+    Yellow = Sparse vegetation
+    White = Little or no vegetation
+    """)
 
 # Render the map in Streamlit
 st_folium(m, width=1000, height=500)

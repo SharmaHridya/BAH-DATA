@@ -23,6 +23,9 @@ st.image("graphs/ah_2010_vs_2050.png")
 st.subheader("NO2 vs Temperature")
 st.image("graphs/no2_vs_temp.png")
 
+st.subheader("Hotspots anthropogenic heat change")
+st.image("graphs/ah_hotspots_line.png")
+
 
 st.markdown("""
 ### Key Insights

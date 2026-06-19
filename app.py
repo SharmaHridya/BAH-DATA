@@ -52,7 +52,12 @@ st.sidebar.subheader("🗺️ Map Layer")
 
 map_mode = st.sidebar.radio(
     "Select Visualization",
-    ["Land Surface Temperature", "Green Cover (NDVI)"]
+    [
+        "Land Surface Temperature",
+        "Green Cover (NDVI)",
+        "Urban Geometry",
+        "Urban Heat Risk"
+    ]
 )
 
 # NEW FEATURE: Dynamic Date Selector to prove real-time data
@@ -99,6 +104,18 @@ s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
 ndvi_image = s2.median() \
     .normalizedDifference(['B8', 'B4']) \
     .rename('NDVI')
+
+worldcover = ee.ImageCollection(
+    "ESA/WorldCover/v200"
+).first()
+
+# Built-up class = 50
+urban_geometry = worldcover.select('Map').eq(50).rename("Urban")
+uhi_index = (
+    lst_image.multiply(0.6)
+    .add(urban_geometry.multiply(15))
+    .subtract(ndvi_image.multiply(10))
+).rename("UHI_Risk")
 
 @st.cache_data
 def get_real_hotspots(start_d, end_d):
@@ -171,6 +188,24 @@ ndvi_vis = {
         'darkgreen'
     ]
 }
+urban_vis = {
+    'min': 0,
+    'max': 1,
+    'palette': ['white', 'red']
+}
+
+risk_vis = {
+    'min': 0,
+    'max': 40,
+    'palette': [
+        'darkgreen',
+        'green',
+        'yellow',
+        'orange',
+        'red',
+        'darkred'
+    ]
+}
 if map_mode == "Land Surface Temperature":
     m.add_ee_layer(
         lst_image.clip(delhi_bounds),
@@ -180,11 +215,29 @@ if map_mode == "Land Surface Temperature":
         opacity=0.65
     )
 
-else:
+elif map_mode == "Green Cover (NDVI)":
     m.add_ee_layer(
         ndvi_image.clip(delhi_bounds),
         ndvi_vis,
         'Green Cover (NDVI)',
+        shown=True,
+        opacity=0.8
+    )
+
+elif map_mode == "Urban Geometry":
+    m.add_ee_layer(
+        urban_geometry.clip(delhi_bounds),
+        urban_vis,
+        'Urban Geometry',
+        shown=True,
+        opacity=0.8
+    )
+
+elif map_mode == "Urban Heat Risk":
+    m.add_ee_layer(
+        uhi_index.clip(delhi_bounds),
+        risk_vis,
+        'Urban Heat Risk',
         shown=True,
         opacity=0.8
     )
@@ -217,6 +270,25 @@ if map_mode == "Green Cover (NDVI)":
     Green = Moderate vegetation
     Yellow = Sparse vegetation
     White = Little or no vegetation
+    """)
+
+elif map_mode == "Urban Geometry":
+    st.warning("""
+    🏙️ Urban Geometry Layer
+
+    Red = Built-up urban area
+    White = Non-urban area
+    """)
+
+elif map_mode == "Urban Heat Risk":
+    st.error("""
+    🔥 Urban Heat Risk Layer
+
+    Dark Green = Low Risk
+    Green = Mild Risk
+    Yellow = Moderate Risk
+    Orange = High Risk
+    Red = Extreme Risk
     """)
 
 # Render the map in Streamlit

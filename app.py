@@ -1,5 +1,4 @@
-# Member 4: Save this as app.py and run it using: streamlit run app.py
-# You will need to install these libraries first: pip install streamlit folium streamlit-folium
+# 🛰️ ISRO BAH 2026 - Urban Heat Mitigation Simulator
 
 import streamlit as st
 import folium
@@ -9,289 +8,200 @@ import ee
 st.set_page_config(page_title="ISRO BAH 2026: UHI Simulator", layout="wide")
 
 # --- EARTH ENGINE SETUP ---
-EE_PROJECT_ID = "bah-isro" # <--- IMPORTANT: Replace with your actual Google Cloud Project ID!
+EE_PROJECT_ID = "bah-isro"
 
-# Initialize Earth Engine. If not authenticated, show an error on the app.
 try:
-    if EE_PROJECT_ID == "YOUR-PROJECT-ID-HERE":
-        st.warning("⚠️ **Action Required:** Please enter your Google Cloud Project ID in the code (line 12) before continuing.")
-        st.info("You can find your Project ID at [console.cloud.google.com](https://console.cloud.google.com/).")
-        st.stop()
-        
     ee.Initialize(project=EE_PROJECT_ID)
 except Exception as e:
-    st.error(f"⚠️ Earth Engine Initialization Failed!\n\n**Error Details:** {e}")
-    st.info("💡 **How to fix the 'Wrong Account' or 'Project Not Found' issue:**\n\n"
-            "1. Open your VS Code terminal and stop the app (`Ctrl+C`).\n"
-            "2. Run: `earthengine authenticate --auth_mode=notebook`\n"
-            "3. **CRITICAL:** Copy the URL it gives you, open an **Incognito/Private window** in your browser, paste the URL, and log in with the *correct* Google account.\n"
-            "4. Copy the authorization code it generates back into your terminal.\n"
-            "5. Restart the app with `streamlit run app.py`.")
+    st.error(f"Earth Engine Init Failed: {e}")
     st.stop()
 
-# --- NATIVE FOLIUM + EARTH ENGINE BRIDGE ---
-# This helper function replaces the need for the buggy 'geemap' library
+
+# --- FOLIUM + EE LAYER HELPER ---
 def add_ee_layer(self, ee_image_object, vis_params, name, shown=True, opacity=1.0):
+
     map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
-    folium.raster_layers.TileLayer(
-        tiles=map_id_dict['tile_fetcher'].url_format,
-        attr='Map Data &copy; <a href="https://earthengine.google.com/">Google Earth Engine</a>',
+
+    folium.TileLayer(
+
+        tiles=map_id_dict["tile_fetcher"].url_format,
+
+        attr="Google Earth Engine",
+
         name=name,
+
         overlay=True,
+
         control=True,
+
         show=shown,
-        opacity=opacity
+
+        opacity=opacity,
+
     ).add_to(self)
 
-# Add EE drawing method to folium.Map.
-folium.Map.add_ee_layer = add_ee_layer
 
-# --- UI: Sidebar Controls ---
-st.sidebar.title("🌿 Intervention Sandbox")
-st.sidebar.subheader("🗺️ Map Layer")
+
+# --- SIDEBAR ---
+st.sidebar.title("🌿 Intervention Controls")
 
 map_mode = st.sidebar.radio(
-    "Select Visualization",
-    [
-        "Land Surface Temperature",
-        "Green Cover (NDVI)",
-        "Urban Geometry",
-        "Urban Heat Risk"
-    ]
+    "Select Layer",
+    ["Land Surface Temperature", "Green Cover (NDVI)", "Urban Heat Risk"]
 )
 
-# NEW FEATURE: Dynamic Date Selector to prove real-time data
-st.sidebar.subheader("📅 Live Satellite Data")
-time_periods = {
-    "May 2023 (Summer Heatwave)": ("2023-05-01", "2023-05-31"),
-    "January 2024 (Winter Peak)": ("2024-01-01", "2024-01-31"),
-    "October 2023 (Post-Monsoon)": ("2023-10-01", "2023-10-31")
-}
-selected_period = st.sidebar.selectbox("Select Observation Period", list(time_periods.keys()))
-start_date, end_date = time_periods[selected_period]
+with st.sidebar.form("controls"):
+    tree_canopy = st.slider("Tree Canopy %", 0, 50, 0)
+    cool_roofs = st.slider("Cool Roofs %", 0, 100, 0)
+    albedo = st.slider("Surface Albedo %", 0, 50, 0)
+    run = st.form_submit_button("Run Simulation")
 
-st.sidebar.markdown("---")
 
-# Wrap the sliders in a form so it doesn't auto-rerun on every drag
-with st.sidebar.form("intervention_form"):
-    st.markdown("Simulate cooling strategies using our (mock) Physics-Informed ML model.")
-    
-    tree_canopy = st.slider("Increase Tree Canopy (%)", 0, 50, 0)
-    cool_roofs = st.slider("Implement Cool Roofs (%)", 0, 100, 0)
-    albedo = st.slider("Increase Surface Albedo (%)", 0, 50, 0)
-    
-    # Every form must have a submit button.
-    submitted = st.form_submit_button("Run Simulation")
-
-# --- DYNAMIC DATA FETCHING ---
+# --- STUDY AREA ---
 delhi_bounds = ee.Geometry.Rectangle([76.83, 28.40, 77.34, 28.88])
 
-# Define the live Landsat 8 LST Image based on the dropdown selection
-dataset = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2') \
-    .filterBounds(delhi_bounds) \
-    .filterDate(start_date, end_date) \
-    .filter(ee.Filter.lt('CLOUD_COVER', 5))
 
-# Convert ST_B10 to Celsius
-lst_image = dataset.median().select('ST_B10').multiply(0.00341802).add(149.0).subtract(273.15)
-# Sentinel-2 vegetation imagery
-s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-    .filterBounds(delhi_bounds) \
-    .filterDate(start_date, end_date) \
-    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+# --- DATA ---
+dataset = (
+    ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+    .filterBounds(delhi_bounds)
+    .filterDate("2023-05-01", "2023-05-31")
+    .filter(ee.Filter.lt("CLOUD_COVER", 5))
+)
 
-# NDVI = (NIR - Red) / (NIR + Red)
-ndvi_image = s2.median() \
-    .normalizedDifference(['B8', 'B4']) \
-    .rename('NDVI')
+lst_image = (
+    dataset.median()
+    .select("ST_B10")
+    .multiply(0.00341802)
+    .add(149.0)
+    .subtract(273.15)
+)
 
-worldcover = ee.ImageCollection(
-    "ESA/WorldCover/v200"
-).first()
+s2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterBounds(delhi_bounds)
+    .filterDate("2023-05-01", "2023-05-31")
+    .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 10))
+)
 
-# Built-up class = 50
-urban_geometry = worldcover.select('Map').eq(50).rename("Urban")
+ndvi_image = s2.median().normalizedDifference(["B8", "B4"]).rename("NDVI")
+
+worldcover = ee.Image("ESA/WorldCover/v200").select("Map")
+urban_geometry = worldcover.eq(50).rename("Urban")
+
+
 uhi_index = (
     lst_image.multiply(0.6)
     .add(urban_geometry.multiply(15))
     .subtract(ndvi_image.multiply(10))
-).rename("UHI_Risk")
+).rename("UHI")
 
-@st.cache_data
-def get_real_hotspots(start_d, end_d):
-    # Re-declare for caching purposes so Streamlit doesn't throw a HashError on EE objects
-    local_dataset = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2') \
-        .filterBounds(ee.Geometry.Rectangle([76.83, 28.40, 77.34, 28.88])) \
-        .filterDate(start_d, end_d) \
-        .filter(ee.Filter.lt('CLOUD_COVER', 5))
-    local_lst = local_dataset.median().select('ST_B10').multiply(0.00341802).add(149.0).subtract(273.15)
-    
-    base_spots = [
-        {"name": "Najafgarh", "lat": 28.6090, "lon": 76.9855},
-        {"name": "Bawana Industrial", "lat": 28.7988, "lon": 77.0329},
-        {"name": "Okhla Estate", "lat": 28.5284, "lon": 77.2721},
-        {"name": "Palam Airport", "lat": 28.5606, "lon": 77.1040},
-        {"name": "Badarpur", "lat": 28.5036, "lon": 77.3045}
+
+# --- HOTSPOTS ---
+def get_hotspots():
+    spots = [
+        ("Najafgarh", 28.6090, 76.9855),
+        ("Bawana", 28.7988, 77.0329),
+        ("Okhla", 28.5284, 77.2721),
+        ("Palam", 28.5606, 77.1040),
+        ("Badarpur", 28.5036, 77.3045),
     ]
-    # Ask GEE for the real temperature at these exact coordinates
-    for spot in base_spots:
-        pt = ee.Geometry.Point([spot['lon'], spot['lat']])
-        temp_data = local_lst.reduceRegion(reducer=ee.Reducer.mean(), geometry=pt, scale=30).getInfo()
-        # Fallback to 25.0 if the pixel is masked out by a cloud
-        
-        spot['base_temp'] = temp_data.get('ST_B10') or 25.0 
-    return base_spots
 
-# Fetch the hotspots based on the selected date
-hotspots = get_real_hotspots(start_date, end_date)
+    results = []
+
+    for name, lat, lon in spots:
+        pt = ee.Geometry.Point([lon, lat])
+
+        val = lst_image.reduceRegion(
+            reducer=ee.Reducer.first(),
+            geometry=pt,
+            scale=30,
+        ).get("ST_B10").getInfo()
+
+        temp = float(val) if val else 25.0
+
+        results.append(
+            {
+                "name": name,
+                "lat": lat,
+                "lon": lon,
+                "temp": temp,
+            }
+        )
+
+    return results
 
 
-# --- MOCK PHYSICS ENGINE ---
-def calculate_new_temp(base_temp, trees, roofs, albedo):
-    # Trees have high latent heat flux (cooling), roofs reflect, albedo reflects
-    cooling = (trees * 0.045) + (roofs * 0.02) + (albedo * 0.03)
-    return max(base_temp - cooling, 10.0) 
+hotspots = get_hotspots()
 
-# --- UI: Main Dashboard ---
+
+# --- SIMPLE PHYSICS MODEL ---
+def simulate(temp):
+    cooling = (tree_canopy * 0.04) + (cool_roofs * 0.02) + (albedo * 0.03)
+    return max(temp - cooling, 10)
+
+
+# --- UI ---
 st.title("🛰️ Geospatial Urban Heat Mitigation Simulator")
-st.markdown("**ISRO BAH 2026 Prototype** | Analyzing top 5 thermal hotspots in Delhi NCR.")
+st.markdown("ISRO BAH 2026 Prototype | Delhi NCR Hotspots")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
-# Calculate metrics for the first hotspot (Najafgarh) as the main display
-main_base = hotspots[0]['base_temp']
-main_new = calculate_new_temp(main_base, tree_canopy, cool_roofs, albedo)
-temp_drop = main_base - main_new
+main_temp = hotspots[0]["temp"]
+new_temp = simulate(main_temp)
+diff = main_temp - new_temp
 
-col1.metric("Najafgarh Baseline Temp", f"{main_base:.1f} °C")
-col2.metric("Simulated Mitigated Temp", f"{main_new:.1f} °C", f"-{temp_drop:.1f} °C (Cooling Effect)", delta_color="inverse")
+col1.metric("Baseline Temp", f"{main_temp:.1f} °C")
+col2.metric("Mitigated Temp", f"{new_temp:.1f} °C", f"-{diff:.1f} °C")
 
-# --- UI: Map ---
-st.subheader(f"Interactive Hotspot Map ({selected_period})")
 
-# Use standard folium map now!
-m = folium.Map(location=[28.6139, 77.2090], zoom_start=10)
+# --- MAP ---
+m = folium.Map(location=[28.6, 77.2], zoom_start=10)
 
-# Add the actual thermal heatmap from Earth Engine using our native integration!
-vis_params = {
-    'min': 15, 'max': 50, 
-    'palette': ['blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']
-}
-ndvi_vis = {
-    'min': 0,
-    'max': 1,
-    'palette': [
-        'white',
-        'yellow',
-        'lightgreen',
-        'green',
-        'darkgreen'
-    ]
-}
-urban_vis = {
-    'min': 0,
-    'max': 1,
-    'palette': ['white', 'red']
+vis_lst = {
+    "min": 15,
+    "max": 50,
+    "palette": ["blue", "cyan", "green", "yellow", "orange", "red"],
 }
 
-risk_vis = {
-    'min': 0,
-    'max': 40,
-    'palette': [
-        'darkgreen',
-        'green',
-        'yellow',
-        'orange',
-        'red',
-        'darkred'
-    ]
+vis_ndvi = {
+    "min": 0,
+    "max": 1,
+    "palette": ["white", "yellow", "green", "darkgreen"],
 }
+
+vis_urban = {
+    "min": 0,
+    "max": 1,
+    "palette": ["white", "red"],
+}
+
+
 if map_mode == "Land Surface Temperature":
-    m.add_ee_layer(
-        lst_image.clip(delhi_bounds),
-        vis_params,
-        'Land Surface Temperature',
-        shown=True,
-        opacity=0.65
-    )
+    add_ee_layer(m, lst_image.clip(delhi_bounds), vis_lst, "LST")
 
 elif map_mode == "Green Cover (NDVI)":
-    m.add_ee_layer(
-        ndvi_image.clip(delhi_bounds),
-        ndvi_vis,
-        'Green Cover (NDVI)',
-        shown=True,
-        opacity=0.8
-    )
-
-elif map_mode == "Urban Geometry":
-    m.add_ee_layer(
-        urban_geometry.clip(delhi_bounds),
-        urban_vis,
-        'Urban Geometry',
-        shown=True,
-        opacity=0.8
-    )
+    add_ee_layer(m, ndvi_image.clip(delhi_bounds), vis_ndvi, "NDVI")
 
 elif map_mode == "Urban Heat Risk":
-    m.add_ee_layer(
-        uhi_index.clip(delhi_bounds),
-        risk_vis,
-        'Urban Heat Risk',
-        shown=True,
-        opacity=0.8
-    )
-# Add the 5 hotspots to the map
-for spot in hotspots:
-    new_t = calculate_new_temp(spot["base_temp"], tree_canopy, cool_roofs, albedo)
-    
-    # Change circle color if we successfully cooled it below 40C
-    marker_color = "green" if new_t < 40.0 else "red"
-    
-    # Add a glowing circle
+    add_ee_layer(m, uhi_index.clip(delhi_bounds), vis_lst, "UHI")
+
+
+# --- HOTSPOTS ON MAP ---
+for h in hotspots:
+    t = simulate(h["temp"])
+    color = "green" if t < 40 else "red"
+
     folium.CircleMarker(
-        location=[spot["lat"], spot["lon"]],
-        radius=15,
-        popup=f"{spot['name']} | Temp: {new_t:.1f}°C",
-        tooltip=f"{spot['name']}",
-        color=marker_color,
+        location=[h["lat"], h["lon"]],
+        radius=10,
+        popup=f"{h['name']} {t:.1f}°C",
+        color=color,
         fill=True,
-        fill_color=marker_color,
-        fill_opacity=0.6
+        fill_opacity=0.7,
     ).add_to(m)
 
-# Add Layer Control to let users toggle the satellite view
+
 folium.LayerControl().add_to(m)
-if map_mode == "Green Cover (NDVI)":
-    st.success("""
-    🌳 Green Cover Layer
 
-    Dark Green = Dense vegetation
-    Green = Moderate vegetation
-    Yellow = Sparse vegetation
-    White = Little or no vegetation
-    """)
-
-elif map_mode == "Urban Geometry":
-    st.warning("""
-    🏙️ Urban Geometry Layer
-
-    Red = Built-up urban area
-    White = Non-urban area
-    """)
-
-elif map_mode == "Urban Heat Risk":
-    st.error("""
-    🔥 Urban Heat Risk Layer
-
-    Dark Green = Low Risk
-    Green = Mild Risk
-    Yellow = Moderate Risk
-    Orange = High Risk
-    Red = Extreme Risk
-    """)
-
-# Render the map in Streamlit
 st_folium(m, width=1000, height=500)
-
-st.info("💡 Note to Judges: The temperatures shown are dynamically queried from live Landsat 8 satellite data via Google Earth Engine API. The final product will integrate an actual PINN (Physics-Informed Neural Network) solving the Surface Energy Balance equation.")

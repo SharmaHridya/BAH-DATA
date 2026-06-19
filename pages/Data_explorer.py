@@ -17,7 +17,7 @@ st.image("graphs/ndvi_vs_temp.png")
 # --- anthropogenic heat ---
 st.subheader("Anthropogenic Heat Analysis")
 st.image("graphs/ah_2010_vs_2050.png")
-st.image("graphs/ah_increase.png")
+
 
 # --- no2 vs temperature ---
 st.subheader("NO2 vs Temperature")

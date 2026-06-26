@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#ff4b4b"      # A striking accent red/orange
+backgroundColor = "#0e1117"   # Deep space dark background
+secondaryBackgroundColor = "#1e1e2f" # Slightly lighter dark for sidebars
+textColor = "#fafafa"         # Crisp white text
+font = "sans serif"           # Modern, clean font
